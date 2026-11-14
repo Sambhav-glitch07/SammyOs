@@ -3,20 +3,21 @@ package sambhav.os.launcher.ui.home
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateIntOffsetAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.animateIntOffsetAsState
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -134,9 +135,10 @@ fun HomeGrid(
                                 onDrag = { change, amount ->
                                     change.consume()
                                     dragPos += amount
+                                    val maxIdx = (shownSize - 1).coerceAtLeast(0)
                                     val col = ((dragPos.x + cellWpx / 2) / cellWpx).toInt().coerceIn(0, cols - 1)
                                     val row = ((dragPos.y + cellHpx / 2) / cellHpx).toInt().coerceIn(0, rowsShown - 1)
-                                    val ni = (row * cols + col).coerceAtMost(shownSize - 1)
+                                    val ni = (row * cols + col).coerceAtMost(maxIdx)
                                     if (ni != idx) onMove(app.key, ni)
                                 },
                                 onDragEnd = { dragKey = null },
