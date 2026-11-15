@@ -1,7 +1,9 @@
 package sambhav.os.launcher.ui.widgets
 
 import android.appwidget.AppWidgetProviderInfo
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
@@ -36,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -46,31 +49,31 @@ import androidx.compose.ui.window.Dialog
 import androidx.core.graphics.drawable.toBitmap
 import sambhav.os.launcher.LauncherViewModel
 import sambhav.os.launcher.ui.components.Pill
+import sambhav.os.launcher.ui.components.glass
 import sambhav.os.launcher.ui.theme.LocalPal
 import sambhav.os.launcher.widgets.WidgetController
 
-/** Page 2: real Android widgets (clock, weather, calendar, music, battery... whatever is installed). */
+/** Page 2: real Android widgets. Press and hold to enter edit mode, where "Add widget" appears. */
 @Composable
 fun WidgetsPage(vm: LauncherViewModel, wc: WidgetController, modifier: Modifier = Modifier) {
     val pal = LocalPal.current
-    var picker by remember { mutableStateOf(false) }
     val widthDp = LocalConfiguration.current.screenWidthDp - 40
     Column(
-        modifier.verticalScroll(rememberScrollState()).statusBarsPadding()
+        modifier
+            .pointerInput(Unit) {
+                detectTapGestures(onLongPress = { vm.editMode = true }, onTap = { if (vm.editMode) vm.editMode = false })
+            }
+            .verticalScroll(rememberScrollState()).statusBarsPadding()
             .padding(horizontal = 20.dp).padding(top = 28.dp, bottom = 200.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text("WIDGETS", color = pal.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 3.sp)
         wc.ids.toList().forEach { id -> key(id) { WidgetCard(vm, wc, id, widthDp) } }
-        if (wc.ids.isEmpty()) {
-            Text(
-                "No widgets yet. Add a clock, weather, calendar or music widget from the apps installed on your phone.",
-                color = pal.sub, fontSize = 14.sp,
-            )
+        if (wc.ids.isEmpty() && !vm.editMode) {
+            Text("Press and hold anywhere to add widgets.", color = pal.sub, fontSize = 14.sp)
         }
-        Pill("Add widget", filled = true) { picker = true }
+        AnimatedVisibility(vm.editMode) { Pill("Add widget", filled = true) { vm.widgetPicker = true } }
     }
-    if (picker) WidgetPicker(wc) { picker = false }
 }
 
 @Composable
@@ -85,7 +88,7 @@ private fun WidgetCard(vm: LauncherViewModel, wc: WidgetController, id: Int, wid
         AndroidView(
             factory = { ctx -> wc.host.createView(ctx, id, info) },
             update = { it.updateAppWidgetSize(null, widthDp, h, widthDp, h) },
-            modifier = Modifier.fillMaxWidth().height(h.dp).clip(RoundedCornerShape(24.dp)),
+            modifier = Modifier.fillMaxWidth().height(h.dp).glass(RoundedCornerShape(24.dp), 12.dp),
         )
         if (vm.editMode) {
             Row(Modifier.align(Alignment.TopEnd).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -113,7 +116,7 @@ private fun Control(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun WidgetPicker(wc: WidgetController, onDismiss: () -> Unit) {
+fun WidgetPicker(wc: WidgetController, onDismiss: () -> Unit) {
     val pal = LocalPal.current
     val ctx = LocalContext.current
     val providers = remember { wc.providers() }
