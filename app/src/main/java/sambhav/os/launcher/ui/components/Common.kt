@@ -3,6 +3,8 @@ package sambhav.os.launcher.ui.components
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.os.Build
+import android.view.WindowManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,6 +25,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ColorFilter
@@ -57,8 +61,12 @@ fun AppIconView(app: AppInfo, size: Dp, shape: Int, style: Int, modifier: Modifi
     val mono = if (style == 1) app.mono else null
     Box(
         modifier.size(size).clip(s)
-            .background(Brush.linearGradient(listOf(pal.tileA, pal.tileB)))
-            .border(0.8.dp, pal.accent.copy(alpha = 0.7f), s),
+            .background(Brush.linearGradient(listOf(pal.tileA.copy(alpha = 0.85f), pal.tileB.copy(alpha = 0.85f))))
+            .border(
+                1.dp,
+                Brush.linearGradient(listOf(Color.White.copy(alpha = 0.55f), pal.accent.copy(alpha = 0.55f), Color.White.copy(alpha = 0.08f))),
+                s,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         if (mono != null) {
@@ -66,20 +74,39 @@ fun AppIconView(app: AppInfo, size: Dp, shape: Int, style: Int, modifier: Modifi
         } else {
             Image(app.icon, null, Modifier.fillMaxSize())
         }
+        // Glass sheen across the top half of the tile.
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(0f to Color.White.copy(alpha = 0.22f), 0.5f to Color.Transparent),
+            ),
+        )
     }
 }
+
+/** Frosted-glass surface: translucent gradient fill, bright top-left edge, soft depth shadow. */
+@Composable
+fun Modifier.glass(shape: Shape, elevation: Dp = 10.dp): Modifier {
+    val pal = LocalPal.current
+    val fill = if (pal.dark) Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.17f), Color.White.copy(alpha = 0.06f)))
+    else Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.7f), Color.White.copy(alpha = 0.4f)))
+    val edge = Brush.linearGradient(
+        listOf(Color.White.copy(alpha = if (pal.dark) 0.55f else 0.95f), pal.accent.copy(alpha = 0.3f), Color.White.copy(alpha = 0.08f)),
+    )
+    return this
+        .shadow(elevation, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.3f), spotColor = Color.Black.copy(alpha = 0.4f))
+        .clip(shape).background(fill).border(1.dp, edge, shape)
+}
+
+/** True when the system can blur what is behind the launcher window (Android 12+, blur enabled). */
+fun Context.blurSupported(): Boolean =
+    Build.VERSION.SDK_INT >= 31 && getSystemService(WindowManager::class.java)?.isCrossWindowBlurEnabled == true
 
 @Composable
 fun Pill(text: String, filled: Boolean = false, onClick: () -> Unit) {
     val pal = LocalPal.current
     val pill = RoundedCornerShape(50)
-    Box(
-        Modifier.clip(pill)
-            .background(if (filled) pal.accent else pal.surface.copy(alpha = 0.9f))
-            .border(1.dp, pal.accent.copy(alpha = 0.6f), pill)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 9.dp),
-    ) {
+    val base = if (filled) Modifier.clip(pill).background(pal.accent) else Modifier.glass(pill, 6.dp)
+    Box(base.clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 9.dp)) {
         Text(text, color = if (filled) pal.bg else pal.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }
