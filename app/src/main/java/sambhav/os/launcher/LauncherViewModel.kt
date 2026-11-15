@@ -26,6 +26,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     var drawerOpen by mutableStateOf(false)
     var settingsOpen by mutableStateOf(false)
     var focusSearch by mutableStateOf(false)
+    var widgetPicker by mutableStateOf(false)
     var homeTick by mutableIntStateOf(0)
 
     init {
