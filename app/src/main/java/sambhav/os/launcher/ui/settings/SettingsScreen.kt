@@ -55,6 +55,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import sambhav.os.launcher.LauncherViewModel
 import sambhav.os.launcher.ui.components.Pill
+import sambhav.os.launcher.ui.components.blurSupported
+import sambhav.os.launcher.ui.components.glass
 import sambhav.os.launcher.ui.components.findActivity
 import sambhav.os.launcher.ui.theme.AccentNames
 import sambhav.os.launcher.ui.theme.LocalPal
@@ -83,6 +85,7 @@ fun SettingsScreen(vm: LauncherViewModel, modifier: Modifier = Modifier) {
     val p = vm.prefs
     val pal = LocalPal.current
     val ctx = LocalContext.current
+    val blur = ctx.blurSupported()
     val all by vm.apps.collectAsState()
     var showHidden by remember { mutableStateOf(false) }
 
@@ -103,7 +106,7 @@ fun SettingsScreen(vm: LauncherViewModel, modifier: Modifier = Modifier) {
         }
     }
 
-    Column(modifier.fillMaxSize().background(pal.bg).statusBarsPadding().navigationBarsPadding()) {
+    Column(modifier.fillMaxSize().background(pal.bg.copy(alpha = if (blur) 0.6f else 0.97f)).statusBarsPadding().navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { vm.settingsOpen = false }) {
                 Icon(Icons.Default.Close, "Close settings", tint = pal.text)
@@ -183,6 +186,7 @@ fun SettingsScreen(vm: LauncherViewModel, modifier: Modifier = Modifier) {
 
             Section("Motion") {
                 Item("Animations") { Toggle(p.animations) { p.animations = it } }
+                Item("Depth parallax (tilt)") { Toggle(p.parallax) { p.parallax = it } }
                 Text(
                     "Turn off to remove springs, jiggle and slide effects.",
                     color = pal.sub, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp),
@@ -207,7 +211,7 @@ private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) 
         modifier = Modifier.padding(top = 22.dp, bottom = 8.dp),
     )
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(pal.surface).padding(horizontal = 16.dp, vertical = 6.dp),
+        Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), 6.dp).padding(horizontal = 16.dp, vertical = 6.dp),
         content = content,
     )
 }
