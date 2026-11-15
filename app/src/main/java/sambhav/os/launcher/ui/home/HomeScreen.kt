@@ -7,6 +7,20 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.Stroke
+import kotlinx.coroutines.flow.distinctUntilChanged
+import sambhav.os.launcher.ui.components.blurSupported
+import sambhav.os.launcher.ui.components.findActivity
+import sambhav.os.launcher.ui.components.glass
+import sambhav.os.launcher.ui.widgets.WidgetPicker
+import kotlin.math.abs
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.Spring
@@ -119,6 +133,23 @@ fun HomeScreen(vm: LauncherViewModel, wc: WidgetController) {
         if (prefs.animations) spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMediumLow) else snap()
     val p by animateFloatAsState(if (vm.drawerOpen) 1f else 0f, spec, label = "drawer")
 
+    val tilt = rememberTilt(prefs.parallax)
+    // Real backdrop blur of the wallpaper behind the drawer and settings (Android 12+).
+    val win = ctx.findActivity()?.window
+    LaunchedEffect(Unit) {
+        if (ctx.blurSupported()) {
+            snapshotFlow { (maxOf(p, if (vm.settingsOpen) 1f else 0f) * 70).toInt() }
+                .distinctUntilChanged()
+                .collect { r -> runCatching { win?.setBackgroundBlurRadius(r) } }
+        }
+    }
+    // After adding a widget, jump to the widgets page so it is easy to find.
+    val prevWidgets = remember { mutableStateOf(wc.ids.size) }
+    LaunchedEffect(wc.ids.size) {
+        if (wc.ids.size > prevWidgets.value) pager.animateScrollToPage(1)
+        prevWidgets.value = wc.ids.size
+    }
+
     LaunchedEffect(vm.homeTick) { if (vm.homeTick > 0) pager.animateScrollToPage(0) }
     BackHandler(enabled = vm.settingsOpen || vm.drawerOpen || vm.editMode || pager.currentPage != 0) {
         when {
@@ -139,9 +170,20 @@ fun HomeScreen(vm: LauncherViewModel, wc: WidgetController) {
                 alpha = 1f - p
             },
         ) {
+            DepthRings(tilt, pager)
             HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
-                if (page == 0) HomePage(vm, homeApps, launch)
-                else WidgetsPage(vm, wc, Modifier.fillMaxSize().navigationBarsPadding())
+                Box(
+                    Modifier.fillMaxSize().graphicsLayer {
+                        val o = abs((pager.currentPage - page) + pager.currentPageOffsetFraction).coerceIn(0f, 1f)
+                        val sc = 1f - 0.07f * o
+                        scaleX = sc
+                        scaleY = sc
+                        alpha = 1f - 0.6f * o
+                    },
+                ) {
+                    if (page == 0) HomePage(vm, homeApps, tilt, launch)
+                    else WidgetsPage(vm, wc, Modifier.fillMaxSize().navigationBarsPadding())
+                }
             }
 
             AnimatedVisibility(
@@ -150,12 +192,15 @@ fun HomeScreen(vm: LauncherViewModel, wc: WidgetController) {
                 enter = fadeIn() + scaleIn(initialScale = 0.8f),
                 exit = fadeOut() + scaleOut(targetScale = 0.8f),
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Pill("Wallpaper") {
-                        ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), "Select wallpaper"))
-                    }
-                    Pill("Settings") { vm.settingsOpen = true }
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Pill("Done", filled = true) { vm.editMode = false }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Pill("Wallpaper") {
+                            ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), "Select wallpaper"))
+                        }
+                        Pill("Widgets") { vm.widgetPicker = true }
+                        Pill("Settings") { vm.settingsOpen = true }
+                    }
                 }
             }
 
@@ -186,11 +231,13 @@ fun HomeScreen(vm: LauncherViewModel, wc: WidgetController) {
             enter = slideInVertically { it / 6 } + fadeIn(),
             exit = slideOutVertically { it / 6 } + fadeOut(),
         ) { SettingsScreen(vm) }
+
+        if (vm.widgetPicker) WidgetPicker(wc) { vm.widgetPicker = false }
     }
 }
 
 @Composable
-private fun HomePage(vm: LauncherViewModel, homeApps: List<AppInfo>, launch: (AppInfo, Rect?) -> Unit) {
+private fun HomePage(vm: LauncherViewModel, homeApps: List<AppInfo>, tilt: State<Offset>, launch: (AppInfo, Rect?) -> Unit) {
     val prefs = vm.prefs
     val threshold = with(LocalDensity.current) { 56.dp.toPx() }
     BoxWithConstraints(
@@ -213,7 +260,7 @@ private fun HomePage(vm: LauncherViewModel, homeApps: List<AppInfo>, launch: (Ap
     ) {
         val compact = maxHeight < 560.dp
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(bottom = BottomReserve)) {
-            ClockBlock(prefs, compact)
+            ClockBlock(prefs, compact, tilt)
             BatteryStrip(compact)
             Spacer(Modifier.height(if (compact) 8.dp else 18.dp))
             HomeGrid(
@@ -230,7 +277,10 @@ private fun HomePage(vm: LauncherViewModel, homeApps: List<AppInfo>, launch: (Ap
                 onMove = { k, i -> vm.moveHome(k, i) },
                 onRemove = { vm.removeHome(it.key) },
                 onLaunch = { a, r -> launch(a, r) },
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                modifier = Modifier.weight(1f).fillMaxWidth().graphicsLayer {
+                    translationX = tilt.value.x * 5.dp.toPx()
+                    translationY = tilt.value.y * 4.dp.toPx()
+                },
             )
         }
     }
@@ -280,7 +330,7 @@ private fun rememberBattery(): State<Pair<Int, Boolean>> {
 }
 
 @Composable
-private fun ClockBlock(prefs: Prefs, compact: Boolean) {
+private fun ClockBlock(prefs: Prefs, compact: Boolean, tilt: State<Offset>) {
     val pal = LocalPal.current
     val ctx = LocalContext.current
     val now by rememberNow()
@@ -291,15 +341,47 @@ private fun ClockBlock(prefs: Prefs, compact: Boolean) {
     val size = if (compact) prefs.clockSize * 0.55f else prefs.clockSize
     val family = if (prefs.clockSerif) FontFamily.Serif else FontFamily.SansSerif
     val weight = if (prefs.clockSerif) FontWeight.Light else FontWeight.ExtraLight
-    Column(Modifier.padding(horizontal = 32.dp).padding(top = 20.dp)) {
+    val style = TextStyle(
+        color = pal.text, fontFamily = family, fontWeight = weight, fontSize = size.sp,
+        lineHeight = (size * 0.95f).sp, letterSpacing = (-0.02f * size).sp,
+        shadow = Shadow(pal.accent.copy(alpha = 0.4f), Offset.Zero, 36f),
+    )
+    Column(
+        Modifier.padding(horizontal = 32.dp).padding(top = 20.dp).graphicsLayer {
+            translationX = tilt.value.x * 12.dp.toPx()
+            translationY = tilt.value.y * 8.dp.toPx()
+        },
+    ) {
         Text(date, color = pal.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 3.sp)
-        Text(
-            if (compact) "$hour:$minute" else "$hour\n$minute",
-            color = pal.text,
-            style = TextStyle(fontFamily = family, fontWeight = weight, fontSize = size.sp, lineHeight = (size * 0.95f).sp, letterSpacing = (-0.02f * size).sp),
-            modifier = Modifier.padding(top = 8.dp),
-        )
+        Spacer(Modifier.height(8.dp))
+        if (compact) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Digits(hour, style, prefs.animations)
+                Text(":", style = style)
+                Digits(minute, style, prefs.animations)
+            }
+        } else {
+            Digits(hour, style, prefs.animations)
+            Digits(minute, style, prefs.animations)
+        }
     }
+}
+
+/** Digits roll in from above when the time changes. */
+@Composable
+private fun Digits(value: String, style: TextStyle, animate: Boolean) {
+    if (!animate) {
+        Text(value, style = style)
+        return
+    }
+    AnimatedContent(
+        targetState = value,
+        transitionSpec = {
+            (slideInVertically(tween(520)) { -it / 2 } + fadeIn(tween(520))) togetherWith
+                (slideOutVertically(tween(420)) { it / 2 } + fadeOut(tween(260)))
+        },
+        label = "digits",
+    ) { Text(it, style = style) }
 }
 
 @Composable
@@ -308,12 +390,9 @@ private fun BatteryStrip(compact: Boolean) {
     val battery by rememberBattery()
     val (pct, charging) = battery
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 32.dp).padding(top = if (compact) 8.dp else 22.dp)
-            .drawBehind {
-                drawLine(pal.accent, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx())
-                drawLine(pal.accent.copy(alpha = 0.4f), Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx())
-            }
-            .padding(vertical = 14.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(top = if (compact) 8.dp else 20.dp)
+            .glass(RoundedCornerShape(24.dp), 10.dp)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -344,9 +423,8 @@ private fun SearchPill(onClick: () -> Unit) {
     val pal = LocalPal.current
     val pill = RoundedCornerShape(50)
     Row(
-        Modifier.padding(horizontal = 28.dp).fillMaxWidth().height(46.dp).clip(pill)
-            .background(pal.surface.copy(alpha = 0.35f))
-            .border(1.dp, pal.accent, pill)
+        Modifier.padding(horizontal = 28.dp).fillMaxWidth().height(48.dp)
+            .glass(pill, 8.dp)
             .clickable(onClickLabel = "Open app search", onClick = onClick)
             .padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -364,9 +442,7 @@ private fun Dock(vm: LauncherViewModel, dockApps: List<AppInfo>, launch: (AppInf
     val shape = RoundedCornerShape(30.dp)
     val iconSize = minOf(prefs.iconSize, 60f).dp
     Row(
-        Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(84.dp).clip(shape)
-            .background(pal.text.copy(alpha = 0.07f))
-            .border(1.dp, pal.accent.copy(alpha = 0.35f), shape),
+        Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(84.dp).glass(shape, 16.dp),
         horizontalArrangement = Arrangement.SpaceAround,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -386,5 +462,19 @@ private fun Dock(vm: LauncherViewModel, dockApps: List<AppInfo>, launch: (AppInf
                 }
             }
         }
+    }
+}
+
+/** Background depth layer: brass rings that drift against the tilt and the page swipe. */
+@Composable
+private fun DepthRings(tilt: State<Offset>, pager: PagerState) {
+    val pal = LocalPal.current
+    Canvas(Modifier.fillMaxSize()) {
+        val shift = (pager.currentPage + pager.currentPageOffsetFraction) * 90.dp.toPx()
+        val ox = -tilt.value.x * 28.dp.toPx() - shift
+        val oy = -tilt.value.y * 20.dp.toPx()
+        val stroke = Stroke(1.dp.toPx())
+        drawCircle(pal.accent.copy(alpha = 0.22f), size.width * 0.55f, Offset(size.width * 0.1f + ox, size.height * 0.42f + oy), style = stroke)
+        drawCircle(pal.accent.copy(alpha = 0.12f), size.width * 0.38f, Offset(size.width * 0.18f + ox * 1.4f, size.height * 0.46f + oy * 1.4f), style = stroke)
     }
 }
