@@ -60,6 +60,7 @@ class Prefs(ctx: Context) {
     var drawerColumns by intP("drawer_cols", 4)
     var showRecents by boolP("show_recents", true)
     var animations by boolP("animations", true)
+    var parallax by boolP("parallax", true)
     // Content
     var seeded by boolP("seeded", false)
     var homeKeys by listP("home")
