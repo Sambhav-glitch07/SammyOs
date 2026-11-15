@@ -1,6 +1,9 @@
 package sambhav.os.launcher.ui.drawer
 
 import android.content.pm.ShortcutInfo
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -54,6 +57,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -70,6 +75,8 @@ import kotlinx.coroutines.withContext
 import sambhav.os.launcher.LauncherViewModel
 import sambhav.os.launcher.data.AppInfo
 import sambhav.os.launcher.ui.components.AppIconView
+import sambhav.os.launcher.ui.components.blurSupported
+import sambhav.os.launcher.ui.components.glass
 import sambhav.os.launcher.ui.theme.LocalPal
 
 /** Swipe-up app drawer: favorites, recents, A-Z sections, live search, long-press actions. */
@@ -82,6 +89,7 @@ fun AppDrawer(
 ) {
     val pal = LocalPal.current
     val prefs = vm.prefs
+    val blur = LocalContext.current.blurSupported()
     val cols = prefs.drawerColumns
     var query by remember { mutableStateOf("") }
     val visible = remember(all, prefs.hidden) { all.filter { it.key !in prefs.hidden } }
@@ -113,7 +121,7 @@ fun AppDrawer(
     }
 
     Column(
-        modifier.fillMaxSize().background(pal.bg.copy(alpha = 0.96f))
+        modifier.fillMaxSize().background(pal.bg.copy(alpha = if (blur) 0.5f else 0.95f))
             .statusBarsPadding().navigationBarsPadding().imePadding(),
     ) {
         // Drag handle: pull down to close.
@@ -140,7 +148,7 @@ fun AppDrawer(
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { results.firstOrNull()?.let { launchAndRemember(it, null) } }),
             modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(48.dp)
-                .clip(pill).border(1.dp, pal.accent, pill)
+                .glass(pill, 6.dp)
                 .focusRequester(focus)
                 .pointerInput(Unit) { detectTapGestures { runCatching { focus.requestFocus() } } },
             decorationBox = { inner ->
@@ -219,12 +227,21 @@ private fun DrawerTile(vm: LauncherViewModel, app: AppInfo, onLaunch: (AppInfo, 
     val pal = LocalPal.current
     val prefs = vm.prefs
     var menu by remember { mutableStateOf(false) }
+    var pressed by remember { mutableStateOf(false) }
+    val pressScale by animateFloatAsState(
+        if (pressed) 0.9f else 1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium), label = "press",
+    )
     var bounds by remember { mutableStateOf(Rect.Zero) }
     Box(
         Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
             .onGloballyPositioned { bounds = it.boundsInWindow() }
             .semantics { contentDescription = app.label }
-            .pointerInput(app.key) { detectTapGestures(onTap = { onLaunch(app, bounds) }, onLongPress = { menu = true }) },
+            .pointerInput(app.key) { detectTapGestures(
+                    onPress = { pressed = true; tryAwaitRelease(); pressed = false },
+                    onTap = { onLaunch(app, bounds) },
+                    onLongPress = { menu = true },
+                ) },
         contentAlignment = Alignment.TopCenter,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
